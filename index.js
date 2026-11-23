@@ -1,4 +1,8 @@
 const http = require('http');
+const crypto = require('crypto');
+
+const submissions = [];
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 const html = `
 <!DOCTYPE html>
@@ -7,12 +11,8 @@ const html = `
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Student Portal</title>
-
 <style>
-* {
-    box-sizing: border-box;
-}
-
+* { box-sizing: border-box; }
 body {
     margin: 0;
     min-height: 100vh;
@@ -24,7 +24,6 @@ body {
     background: #0f172a;
     color: white;
 }
-
 .container {
     width: 100%;
     max-width: 400px;
@@ -33,9 +32,7 @@ body {
     background: #1e293b;
     border: 1px solid #334155;
     border-radius: 20px;
-    box-shadow: 0 15px 40px rgba(0,0,0,0.3);
 }
-
 .logo {
     width: 65px;
     height: 65px;
@@ -48,35 +45,18 @@ body {
     font-size: 22px;
     font-weight: bold;
 }
-
-h1 {
-    font-size: 27px;
-    margin: 0 0 10px;
-}
-
-.subtitle {
-    color: #94a3b8;
-    font-size: 14px;
-    line-height: 1.6;
-    margin-bottom: 30px;
-}
-
+h1 { font-size: 27px; }
+.subtitle { color: #94a3b8; font-size: 14px; line-height: 1.6; }
 input {
     width: 100%;
     padding: 15px;
-    margin-bottom: 15px;
+    margin: 15px 0;
     border: 1px solid #475569;
     border-radius: 10px;
     background: #0f172a;
     color: white;
     font-size: 15px;
-    outline: none;
 }
-
-input:focus {
-    border-color: #3b82f6;
-}
-
 button {
     width: 100%;
     padding: 15px;
@@ -86,20 +66,8 @@ button {
     color: white;
     font-size: 16px;
     font-weight: bold;
-    cursor: pointer;
 }
-
-button:disabled {
-    opacity: 0.6;
-}
-
-#result {
-    margin-top: 20px;
-    font-size: 14px;
-    line-height: 1.5;
-    color: #4ade80;
-}
-
+#result { margin-top: 20px; color: #4ade80; }
 .notice {
     margin-top: 28px;
     padding: 12px;
@@ -109,54 +77,36 @@ button:disabled {
     font-size: 12px;
     line-height: 1.5;
 }
-
-.footer {
-    margin-top: 22px;
-    color: #64748b;
-    font-size: 11px;
-}
+.footer { margin-top: 22px; color: #64748b; font-size: 11px; }
 </style>
 </head>
-
 <body>
-
 <div class="container">
-
     <div class="logo">SP</div>
-
     <h1>Student Portal</h1>
-
     <p class="subtitle">
         Welcome to our educational demonstration.
         Explore how websites communicate with servers.
     </p>
 
     <form id="demoForm">
-        <input
-            type="text"
-            id="username"
-            placeholder="Enter a fictional username"
-            maxlength="40"
-            autocomplete="off"
-            required
-        >
-
-        <button id="submitButton" type="submit">
-            Continue
-        </button>
+        <input type="text" id="username"
+        placeholder="Enter a fictional username"
+        maxlength="40" autocomplete="off" required>
+        <button id="submitButton" type="submit">Continue</button>
     </form>
 
     <p id="result" aria-live="polite"></p>
 
     <div class="notice">
         Educational demonstration only.
+        Submitted fictional usernames are recorded for this project.
         Do not enter real names, passwords or personal information.
     </div>
 
     <div class="footer">
         Student Portal | Cybersecurity School Project
     </div>
-
 </div>
 
 <script>
@@ -169,29 +119,21 @@ form.addEventListener('submit', async function(event) {
 
     const username = document.getElementById('username').value.trim();
 
-    if (!username) {
-        result.textContent = 'Please enter a fictional username.';
-        return;
-    }
+    if (!username) return;
 
     button.disabled = true;
     button.textContent = 'Sending...';
-    result.textContent = '';
 
     try {
         const response = await fetch('/demo', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username })
         });
 
-        const message = await response.text();
+        result.textContent = await response.text();
 
-        result.textContent = message;
-
-    } catch (error) {
+    } catch {
         result.textContent = 'Could not contact the server. Try again.';
     }
 
@@ -199,23 +141,56 @@ form.addEventListener('submit', async function(event) {
     button.textContent = 'Continue';
 });
 </script>
-
 </body>
 </html>
 `;
 
+function escapeHTML(value) {
+    return value.replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[char]);
+}
+
+function authorized(req) {
+    if (!ADMIN_PASSWORD) return false;
+
+    const header = req.headers.authorization || '';
+    if (!header.startsWith('Basic ')) return false;
+
+    let credentials;
+
+    try {
+        credentials = Buffer.from(header.slice(6), 'base64').toString();
+    } catch {
+        return false;
+    }
+
+    const separator = credentials.indexOf(':');
+    if (separator < 0) return false;
+
+    const password = credentials.slice(separator + 1);
+
+    const a = Buffer.from(password);
+    const b = Buffer.from(ADMIN_PASSWORD);
+
+    return a.length === b.length &&
+        crypto.timingSafeEqual(a, b);
+}
+
 const server = http.createServer((req, res) => {
 
     if (req.method === 'GET' && req.url === '/') {
-
         res.writeHead(200, {
             'Content-Type': 'text/html; charset=utf-8'
         });
+        return res.end(html);
+    }
 
-        res.end(html);
-
-    } else if (req.method === 'POST' && req.url === '/demo') {
-
+    if (req.method === 'POST' && req.url === '/demo') {
         let body = '';
 
         req.on('data', chunk => {
@@ -232,10 +207,21 @@ const server = http.createServer((req, res) => {
                 if (
                     typeof data.username !== 'string' ||
                     !data.username.trim() ||
-                    data.username.length > 40
+                    data.username.trim().length > 40
                 ) {
                     res.writeHead(400);
                     return res.end('Invalid fictional username.');
+                }
+
+                const username = data.username.trim();
+
+                submissions.push({
+                    username,
+                    time: new Date().toISOString()
+                });
+
+                if (submissions.length > 100) {
+                    submissions.shift();
                 }
 
                 res.writeHead(200, {
@@ -243,8 +229,8 @@ const server = http.createServer((req, res) => {
                 });
 
                 res.end(
-                    'Hello, ' + data.username.trim() +
-                    '! The server received your username.'
+                    'Hello, ' + username +
+                    '! Your fictional username was received.'
                 );
 
             } catch {
@@ -253,12 +239,76 @@ const server = http.createServer((req, res) => {
             }
         });
 
-    } else {
-        res.writeHead(404);
-        res.end('Page not found');
+        return;
     }
+
+    if (req.method === 'GET' && req.url === '/admin') {
+
+        if (!ADMIN_PASSWORD) {
+            res.writeHead(503);
+            return res.end('Admin password is not configured.');
+        }
+
+        if (!authorized(req)) {
+            res.writeHead(401, {
+                'WWW-Authenticate': 'Basic realm="Student Portal Admin"'
+            });
+            return res.end('Admin login required.');
+        }
+
+        const rows = submissions.map((item, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${escapeHTML(item.username)}</td>
+                <td>${escapeHTML(item.time)}</td>
+            </tr>
+        `).join('');
+
+        res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8'
+        });
+
+        return res.end(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Admin Dashboard</title>
+            <style>
+            body {
+                background:#0f172a;color:white;
+                font-family:Arial;padding:20px;
+            }
+            h1 { color:#60a5fa; }
+            table {
+                width:100%;border-collapse:collapse;
+                background:#1e293b;
+            }
+            th,td {
+                padding:12px;text-align:left;
+                border-bottom:1px solid #475569;
+                overflow-wrap:anywhere;
+            }
+            </style>
+            </head>
+            <body>
+            <h1>Student Portal Admin</h1>
+            <p>Total submissions: ${submissions.length}</p>
+            <table>
+            <tr><th>No.</th><th>Fictional username</th><th>Time</th></tr>
+            ${rows || '<tr><td colspan="3">No submissions yet.</td></tr>'}
+            </table>
+            </body>
+            </html>
+        `);
+    }
+
+    res.writeHead(404);
+    res.end('Page not found');
 });
 
-server.listen(process.env.PORT || 3000, () => {
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, () => {
     console.log('Student Portal is running!');
 });
